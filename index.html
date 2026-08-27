@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173d50" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="工地丈量" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css?v=4" />
+    <title>工地丈量APP</title>
+  </head>
+  <body>
+    <header><span>工地丈量APP</span><small>照片標註・包板報數・資料只留在此手機</small></header>
+    <nav class="app-tabs" role="tablist" aria-label="工作畫面">
+      <button id="measure-tab" class="tab-button active" type="button" role="tab" aria-label="照片丈量" title="照片丈量" aria-selected="true" aria-controls="measure-view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM6 16l4-4 3 3 2-2 3 3M6 8h3"/></svg></button>
+      <button id="section-tab" class="tab-button" type="button" role="tab" aria-label="即時斷面" title="即時斷面" aria-selected="false" aria-controls="section-view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M5 6v12h5V9h4v9h5V6M3 18h18"/></svg></button>
+    </nav>
+    <main>
+      <div id="measure-view" class="tab-view" role="tabpanel" aria-labelledby="measure-tab">
+      <section class="photo-panel" aria-label="現場照片標註">
+        <div class="panel-title"><strong>① 現場照片</strong><span id="save-status" class="save-status" role="status">尚無資料</span></div>
+        <p id="draw-hint">請先拍照或選取照片。</p>
+        <div class="annotation-tools" role="toolbar" aria-label="照片標註工具">
+          <label class="icon-button camera" aria-label="拍照" title="拍照">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="4"/></svg>
+            <input id="camera-input" type="file" accept="image/*" capture="environment" />
+          </label>
+          <label class="icon-button gallery" aria-label="讀取相簿" title="讀取相簿"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM6 16l4-4 3 3 2-2 3 3"/><circle cx="16.5" cy="9" r="1.5"/></svg><input id="gallery-input" type="file" accept="image/*" /></label>
+          <button id="draw-line" class="icon-button" type="button" disabled aria-label="畫尺寸線" title="畫尺寸線" aria-pressed="false">
+            <svg class="draw-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M6.5 17.5l11-11"/></svg>
+            <svg class="cancel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+          </button>
+          <button id="undo-action" class="icon-button secondary" type="button" disabled aria-label="上一步" title="上一步"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7l-5 5 5 5M5 12h8a6 6 0 016 6"/></svg></button>
+          <button id="delete-line" class="icon-button danger" type="button" disabled aria-label="刪除選取線" title="刪除選取線"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button>
+          <button id="export-annotated" class="icon-button export" type="button" disabled aria-label="輸出含標註照片" title="輸出含標註照片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg></button>
+        </div>
+        <div id="photo-stage" class="photo-stage empty">
+          <img id="photo" alt="現場原始照片預覽" />
+          <canvas id="annotation-canvas" aria-label="照片尺寸標註區"></canvas>
+          <span class="empty-message">尚未載入照片</span>
+        </div>
+      </section>
+
+      <section class="report-panel" aria-label="包板報數">
+        <div class="panel-title"><strong>② 這條尺寸的報數</strong><button id="voice-button" class="voice-button" type="button" disabled aria-label="語音輸入備註" title="語音輸入備註"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0014 0M12 18v3M9 21h6"/></svg></button></div>
+        <p id="selected-line">請先在照片上畫一條尺寸線。</p>
+        <div class="fields">
+          <label>C 鋼現場尺寸<input id="c-steel" type="number" inputmode="decimal" min="0" placeholder="536" /><span>mm</span></label>
+          <label>板厚<input id="thickness" type="number" inputmode="decimal" min="0" value="30" /><span>mm</span></label>
+          <label>矽利康縫<input id="sealant" type="number" inputmode="decimal" min="0" value="15" /><span>mm</span></label>
+        </div>
+        <div class="formula"><small>報數原式</small><output id="formula">尚未建立尺寸線</output><strong id="result">— mm</strong></div>
+        <label class="notes">現場備註<textarea id="notes" rows="2" placeholder="例如：C 鋼到包板面；此處牆柱外凸。"></textarea></label>
+        <small class="dictation-hint">點麥克風；若出現鍵盤，再按鍵盤上的麥克風說話。</small>
+        <p id="voice-status" class="muted"></p>
+      </section>
+      </div>
+
+      <section id="section-view" class="section-panel" role="tabpanel" aria-labelledby="section-tab" aria-label="斷面計算示意" hidden>
+        <div class="panel-title"><strong>③ 斷面／包板計算示意</strong><small>依目前選取的照片尺寸線</small></div>
+        <div class="sketch" id="section-sketch">
+          <div class="support">C 鋼<br /><span id="sketch-c">—</span></div><div class="distance"></div><div class="board"><span id="sketch-t">板厚 —</span></div><div class="gap"><span id="sketch-s">縫 —</span></div><div class="finish">包板完成面<br /><strong id="sketch-result">—</strong></div>
+        </div>
+        <p class="muted">此版本為尺寸對照示意。照片辨識自動起草斷面前，仍須由現場人員確認。</p>
+      </section>
+    </main>
+    <script type="module" src="app.js?v=4"></script>
+  </body>
+</html>
+

@@ -1,5 +1,5 @@
-import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js';
-import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js';
+import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js?v=7';
+import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js?v=7';
 
 const defaults = { cSteel: '', thickness: 30, sealant: 15, notes: '' };
 const state = { photoDataUrl: '', lines: [], selectedId: null, drawing: null, drawMode: false };
@@ -17,10 +17,12 @@ const voiceStatus = document.querySelector('#voice-status');
 const saveStatus = document.querySelector('#save-status');
 const exportButton = document.querySelector('#export-annotated');
 const drawButton = document.querySelector('#draw-line');
+const lDrawButton = document.querySelector('#draw-l-line');
 const undoButton = document.querySelector('#undo-action');
 const deleteButton = document.querySelector('#delete-line');
 const voiceButton = document.querySelector('#voice-button');
 const drawHint = document.querySelector('#draw-hint');
+const measurementList = document.querySelector('#measurement-list');
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 let saveTimer;
 let renderFrame;
@@ -40,10 +42,14 @@ function remember() {
 function updateControls() {
   const hasPhoto = Boolean(state.photoDataUrl);
   drawButton.disabled = !hasPhoto;
-  drawButton.classList.toggle('active', state.drawMode);
-  drawButton.setAttribute('aria-pressed', String(state.drawMode));
-  drawButton.setAttribute('aria-label', state.drawMode ? '取消畫線' : '畫尺寸線');
-  drawButton.title = state.drawMode ? '取消畫線' : '畫尺寸線';
+  lDrawButton.disabled = !hasPhoto;
+  for (const [button, mode, label] of [[drawButton, 'straight', '直線'], [lDrawButton, 'l', 'L 型線']]) {
+    const active = state.drawMode === mode;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    button.setAttribute('aria-label', active ? `取消畫${label}` : `畫${label}`);
+    button.title = active ? `取消畫${label}` : `畫${label}`;
+  }
   undoButton.disabled = history.length === 0;
   deleteButton.disabled = !selected();
   voiceButton.disabled = !selected();
@@ -51,7 +57,7 @@ function updateControls() {
   drawHint.textContent = !hasPhoto
     ? '請先拍照或選取照片。'
     : state.drawMode
-      ? '畫線模式：在照片上按住拖曳；再點橘色圖示可取消。'
+      ? `${state.drawMode === 'l' ? 'L 型線' : '直線'}模式：在照片上按住拖曳；再點橘色圖示可取消。`
       : '點畫線圖示後再拖曳；直接點既有線可選取修改。';
 }
 function showPhoto(source) {
@@ -91,16 +97,21 @@ function lineDistance(pointValue, line) {
   const x = pointValue.x * canvas.clientWidth; const y = pointValue.y * canvas.clientHeight;
   const ax = line.a.x * canvas.clientWidth; const ay = line.a.y * canvas.clientHeight;
   const bx = line.b.x * canvas.clientWidth; const by = line.b.y * canvas.clientHeight;
-  const length = Math.hypot(bx - ax, by - ay) || 1;
-  return Math.abs((by - ay) * x - (bx - ax) * y + bx * ay - by * ax) / length;
+  const points = line.type === 'l' ? [[ax, ay], [ax, by], [bx, by]] : [[ax, ay], [bx, by]];
+  return Math.min(...points.slice(1).map(([px, py], index) => {
+    const [qx, qy] = points[index]; const dx = px - qx; const dy = py - qy;
+    const t = Math.max(0, Math.min(1, ((x - qx) * dx + (y - qy) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(x - (qx + t * dx), y - (qy + t * dy));
+  }));
 }
 function drawLine(line, active, targetContext = context, width = canvas.clientWidth, height = canvas.clientHeight) {
   const a = { x: line.a.x * width, y: line.a.y * height }; const b = { x: line.b.x * width, y: line.b.y * height };
   targetContext.strokeStyle = active ? '#ffe36e' : '#12d5e8'; targetContext.fillStyle = '#102f3b'; targetContext.lineWidth = active ? 5 : 3;
-  targetContext.beginPath(); targetContext.moveTo(a.x, a.y); targetContext.lineTo(b.x, b.y); targetContext.stroke();
+  targetContext.beginPath(); targetContext.moveTo(a.x, a.y); if (line.type === 'l') targetContext.lineTo(a.x, b.y); targetContext.lineTo(b.x, b.y); targetContext.stroke();
   [a, b].forEach((p) => { targetContext.beginPath(); targetContext.arc(p.x, p.y, 5, 0, Math.PI * 2); targetContext.fillStyle = '#fff'; targetContext.fill(); targetContext.stroke(); });
-  if (!calculateReport(line)) return;
-  const label = `${formatReport(line)} mm`;
+  const measurement = line.cSteel === '' ? null : Number(line.cSteel);
+  const number = line.number ?? state.lines.indexOf(line) + 1;
+  const label = Number.isFinite(measurement) ? `${number}　${measurement} mm` : `${number}`;
   targetContext.font = `600 ${Math.max(13, width / 55)}px system-ui`; const textWidth = targetContext.measureText(label).width;
   const x = (a.x + b.x) / 2; const y = (a.y + b.y) / 2 - 12;
   const labelX = Math.min(Math.max(x - textWidth / 2 - 6, 4), Math.max(4, width - textWidth - 16));
@@ -110,7 +121,7 @@ function drawLine(line, active, targetContext = context, width = canvas.clientWi
 function render() {
   context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   state.lines.forEach((line) => drawLine(line, line.id === state.selectedId));
-  if (state.drawing) drawLine({ ...defaults, a: state.drawing.a, b: state.drawing.b }, true);
+  if (state.drawing) drawLine({ ...defaults, number: state.lines.length + 1, type: state.drawMode, a: state.drawing.a, b: state.drawing.b }, true);
 }
 function scheduleRender() {
   if (renderFrame) return;
@@ -119,8 +130,15 @@ function scheduleRender() {
 function updatePanel() {
   const line = selected();
   const disabled = !line;
+  measurementList.replaceChildren(...state.lines.map((item, index) => {
+    const row = document.createElement('button'); row.type = 'button'; row.className = `measurement-row${item.id === state.selectedId ? ' active' : ''}`;
+    const number = item.number ?? index + 1; const measured = item.cSteel === '' ? null : Number(item.cSteel); const value = Number.isFinite(measured) ? `${measured} mm` : '未輸入尺寸';
+    row.innerHTML = `<span class="measurement-number">${number}</span><span>${item.type === 'l' ? 'L 型線' : '直線'}</span><span class="measurement-value">${value}</span>`;
+    row.addEventListener('click', () => { state.selectedId = item.id; updatePanel(); render(); });
+    return row;
+  }));
   Object.entries(fields).forEach(([key, field]) => { field.disabled = disabled; field.value = line?.[key] ?? defaults[key]; });
-  selectedLine.textContent = line ? `正在編輯照片尺寸線 ${state.lines.indexOf(line) + 1}` : '請按「畫尺寸線」，或點選照片上的既有線。';
+  selectedLine.textContent = line ? `正在編輯 ${line.number ?? state.lines.indexOf(line) + 1} 號${line.type === 'l' ? ' L 型線' : '直線'}` : '請按畫線圖示，或點選照片／清單中的既有線。';
   const calculation = line && calculateReport(line);
   formula.textContent = line ? formatReport(line) : '尚未建立尺寸線';
   result.textContent = calculation ? `${calculation.result} mm` : '— mm';
@@ -133,7 +151,8 @@ function updatePanel() {
 function addLine(a, b) {
   remember();
   const id = crypto.randomUUID();
-  state.lines.push({ id, a, b, ...defaults }); state.selectedId = id; state.drawMode = false;
+  const number = Math.max(0, ...state.lines.map((line, index) => line.number ?? index + 1)) + 1;
+  state.lines.push({ id, number, type: state.drawMode, a, b, ...defaults }); state.selectedId = id; state.drawMode = false;
   updatePanel(); render(); queueSave();
 }
 
@@ -186,7 +205,7 @@ Object.entries(fields).forEach(([key, field]) => field.addEventListener('input',
     if (measurement) {
       Object.assign(line, measurement); line.notes = dictationStartNotes ?? '';
       field.dataset.voiceMeasurement = 'false'; dictationStartNotes = null;
-      updatePanel(); render(); queueSave(); voiceStatus.textContent = `已填入照片尺寸：${formatReport(line)}`; return;
+      updatePanel(); render(); queueSave(); voiceStatus.textContent = `已收到鍵盤聽寫，${line.number} 號線顯示 ${measurement.cSteel} mm。`; return;
     }
   }
   line[key] = field.value;
@@ -196,8 +215,8 @@ Object.values(fields).forEach((field) => {
   field.addEventListener('focus', () => { field.dataset.historySaved = 'false'; });
   field.addEventListener('blur', () => { field.dataset.historySaved = 'false'; if (field === fields.notes) { field.dataset.voiceMeasurement = 'false'; dictationStartNotes = null; } });
 });
-drawButton.addEventListener('click', () => {
-  state.drawMode = !state.drawMode; state.drawing = null; render(); updateControls();
+for (const [button, mode] of [[drawButton, 'straight'], [lDrawButton, 'l']]) button.addEventListener('click', () => {
+  state.drawMode = state.drawMode === mode ? false : mode; state.drawing = null; render(); updateControls();
 });
 undoButton.addEventListener('click', () => {
   const previous = history.pop(); if (!previous) return;
@@ -221,29 +240,47 @@ tabs.forEach((tab) => tab.addEventListener('click', () => {
   });
   if (tab.id === 'measure-tab') requestAnimationFrame(resizeCanvas);
 }));
-function useKeyboardDictation() {
+function setVoiceListening(active, message) {
+  voiceButton.classList.toggle('listening', active);
+  voiceButton.setAttribute('aria-pressed', String(active));
+  voiceStatus.textContent = message;
+}
+function useKeyboardDictation(message = '未收到語音，請按鍵盤麥克風再念一次，例如「536」。') {
+  setVoiceListening(false, message);
   dictationStartNotes = fields.notes.value;
   fields.notes.dataset.voiceMeasurement = 'true';
   fields.notes.focus();
   fields.notes.setSelectionRange(fields.notes.value.length, fields.notes.value.length);
-  voiceStatus.textContent = '請按鍵盤麥克風，念「536 加 30 減 15」。';
 }
 function applyVoiceText(text) {
   const line = selected(); if (!line) return;
-  const measurement = parseSpokenMeasurement(text); remember();
+  const spoken = String(text ?? '').trim();
+  const measurement = parseSpokenMeasurement(spoken);
+  setVoiceListening(false, `已聽到「${spoken}」。`);
+  if (!spoken) { useKeyboardDictation(); return; }
+  remember();
   if (measurement) {
-    Object.assign(line, measurement); updatePanel(); render(); queueSave(); voiceStatus.textContent = `已填入照片尺寸：${formatReport(line)}`; return;
+    Object.assign(line, measurement); updatePanel(); render(); queueSave(); voiceStatus.textContent = `已聽到「${spoken}」，${line.number} 號線顯示 ${measurement.cSteel} mm。`; return;
   }
-  line.notes = [line.notes, text].filter(Boolean).join('\n'); updatePanel(); queueSave(); voiceStatus.textContent = `已加入備註：${text}`;
+  line.notes = [line.notes, spoken].filter(Boolean).join('\n'); updatePanel(); queueSave(); voiceStatus.textContent = `已聽到「${spoken}」，但不是尺寸；已保留為備註。請只念數字，例如「536」。`;
 }
 voiceButton.addEventListener('click', () => {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!selected()) { voiceStatus.textContent = '請先選取照片上的尺寸線。'; return; }
   if (!Recognition) { useKeyboardDictation(); return; }
   const recognition = new Recognition(); recognition.lang = 'zh-TW'; recognition.interimResults = false; recognition.maxAlternatives = 1;
-  voiceStatus.textContent = '正在聆聽…';
-  recognition.onresult = (event) => applyVoiceText(event.results[0][0].transcript);
-  recognition.onerror = useKeyboardDictation;
+  let finished = false;
+  setVoiceListening(true, '麥克風啟動中…');
+  recognition.onstart = () => setVoiceListening(true, '麥克風已開啟，請念尺寸。');
+  recognition.onaudiostart = () => setVoiceListening(true, '正在收音，請念「536」。');
+  recognition.onspeechstart = () => setVoiceListening(true, '已偵測到聲音，正在辨識…');
+  recognition.onresult = (event) => { finished = true; applyVoiceText(event.results[0][0].transcript); };
+  recognition.onnomatch = () => { finished = true; useKeyboardDictation('有收到聲音，但無法辨識數字；請按鍵盤麥克風再念一次。'); };
+  recognition.onerror = (event) => {
+    finished = true;
+    useKeyboardDictation(event.error === 'not-allowed' ? '麥克風權限未開啟，請允許後再試。' : '語音辨識沒有完成，請按鍵盤麥克風再念一次。');
+  };
+  recognition.onend = () => { if (!finished) useKeyboardDictation(); };
   try { recognition.start(); } catch { useKeyboardDictation(); }
 });
 exportButton.addEventListener('click', () => {

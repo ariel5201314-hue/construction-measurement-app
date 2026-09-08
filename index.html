@@ -8,7 +8,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="工地丈量" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=5" />
+    <link rel="stylesheet" href="styles.css?v=7" />
     <title>工地丈量APP</title>
   </head>
   <body>
@@ -32,6 +32,10 @@
             <svg class="draw-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M6.5 17.5l11-11"/></svg>
             <svg class="cancel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
           </button>
+          <button id="draw-l-line" class="icon-button" type="button" disabled aria-label="畫 L 型尺寸線" title="畫 L 型尺寸線" aria-pressed="false">
+            <svg class="draw-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="M5 7v12h12"/></svg>
+            <svg class="cancel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+          </button>
           <button id="undo-action" class="icon-button secondary" type="button" disabled aria-label="上一步" title="上一步"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7l-5 5 5 5M5 12h8a6 6 0 016 6"/></svg></button>
           <button id="delete-line" class="icon-button danger" type="button" disabled aria-label="刪除選取線" title="刪除選取線"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button>
           <button id="export-annotated" class="icon-button export" type="button" disabled aria-label="輸出含標註照片" title="輸出含標註照片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></svg></button>
@@ -44,7 +48,9 @@
       </section>
 
       <section class="report-panel" aria-label="包板報數">
-        <div class="panel-title"><strong>② 這條尺寸的報數</strong><button id="voice-button" class="voice-button" type="button" disabled aria-label="語音輸入尺寸" title="語音輸入尺寸"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0014 0M12 18v3M9 21h6"/></svg></button></div>
+        <div class="panel-title"><strong>② 尺寸清單</strong><button id="voice-button" class="voice-button" type="button" disabled aria-label="語音輸入尺寸" title="語音輸入尺寸" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0014 0M12 18v3M9 21h6"/></svg></button></div>
+        <p id="voice-status" class="muted" role="status" aria-live="polite"></p>
+        <div id="measurement-list" class="measurement-list" aria-label="尺寸清單"></div>
         <p id="selected-line">請先在照片上畫一條尺寸線。</p>
         <div class="fields">
           <label>C 鋼現場尺寸<input id="c-steel" type="number" inputmode="decimal" min="0" placeholder="536" /><span>mm</span></label>
@@ -53,8 +59,7 @@
         </div>
         <div class="formula"><small>報數原式</small><output id="formula">尚未建立尺寸線</output><strong id="result">— mm</strong></div>
         <label class="notes">現場備註<textarea id="notes" rows="2" placeholder="例如：C 鋼到包板面；此處牆柱外凸。"></textarea></label>
-        <small class="dictation-hint">點大麥克風後，念「536 加 30 減 15」；若出現鍵盤，再按鍵盤麥克風。</small>
-        <p id="voice-status" class="muted"></p>
+        <small class="dictation-hint">選取線段後，點大麥克風並只念尺寸，例如「536」。</small>
       </section>
       </div>
 
@@ -66,6 +71,6 @@
         <p class="muted">此版本為尺寸對照示意。照片辨識自動起草斷面前，仍須由現場人員確認。</p>
       </section>
     </main>
-    <script type="module" src="app.js?v=5"></script>
+    <script type="module" src="app.js?v=7"></script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-import { calculateReport, formatReport } from './calculator.js';
+import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js';
 import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js';
 
 const defaults = { cSteel: '', thickness: 30, sealant: 15, notes: '' };
@@ -24,6 +24,7 @@ const drawHint = document.querySelector('#draw-hint');
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 let saveTimer;
 let renderFrame;
+let dictationStartNotes = null;
 
 function selected() { return state.lines.find((line) => line.id === state.selectedId); }
 function annotationSnapshot() {
@@ -98,11 +99,13 @@ function drawLine(line, active, targetContext = context, width = canvas.clientWi
   targetContext.strokeStyle = active ? '#ffe36e' : '#12d5e8'; targetContext.fillStyle = '#102f3b'; targetContext.lineWidth = active ? 5 : 3;
   targetContext.beginPath(); targetContext.moveTo(a.x, a.y); targetContext.lineTo(b.x, b.y); targetContext.stroke();
   [a, b].forEach((p) => { targetContext.beginPath(); targetContext.arc(p.x, p.y, 5, 0, Math.PI * 2); targetContext.fillStyle = '#fff'; targetContext.fill(); targetContext.stroke(); });
-  if (line.cSteel === '') return;
+  if (!calculateReport(line)) return;
   const label = `${formatReport(line)} mm`;
   targetContext.font = `600 ${Math.max(13, width / 55)}px system-ui`; const textWidth = targetContext.measureText(label).width;
   const x = (a.x + b.x) / 2; const y = (a.y + b.y) / 2 - 12;
-  targetContext.fillStyle = '#102f3bdd'; targetContext.fillRect(x - textWidth / 2 - 6, y - 15, textWidth + 12, 22); targetContext.fillStyle = '#fff'; targetContext.fillText(label, x - textWidth / 2, y);
+  const labelX = Math.min(Math.max(x - textWidth / 2 - 6, 4), Math.max(4, width - textWidth - 16));
+  const labelY = Math.min(Math.max(y - 15, 4), height - 26);
+  targetContext.fillStyle = '#102f3bdd'; targetContext.fillRect(labelX, labelY, textWidth + 12, 22); targetContext.fillStyle = '#fff'; targetContext.fillText(label, labelX + 6, labelY + 16);
 }
 function render() {
   context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -156,6 +159,7 @@ canvas.addEventListener('pointerdown', (event) => {
   if (stage.classList.contains('empty')) return;
   const p = point(event);
   if (state.drawMode) {
+    event.preventDefault();
     state.drawing = { a: p, b: p }; canvas.setPointerCapture(event.pointerId); updateControls(); return;
   }
   const hit = state.lines.find((line) => lineDistance(p, line) < 18);
@@ -177,12 +181,20 @@ canvas.addEventListener('pointercancel', () => { state.drawing = null; render();
 Object.entries(fields).forEach(([key, field]) => field.addEventListener('input', () => {
   const line = selected(); if (!line) return;
   if (field.dataset.historySaved !== 'true') { remember(); field.dataset.historySaved = 'true'; }
+  if (key === 'notes' && field.dataset.voiceMeasurement === 'true') {
+    const measurement = parseSpokenMeasurement(field.value.slice(dictationStartNotes?.length ?? 0));
+    if (measurement) {
+      Object.assign(line, measurement); line.notes = dictationStartNotes ?? '';
+      field.dataset.voiceMeasurement = 'false'; dictationStartNotes = null;
+      updatePanel(); render(); queueSave(); voiceStatus.textContent = `已填入照片尺寸：${formatReport(line)}`; return;
+    }
+  }
   line[key] = field.value;
   updatePanel(); render(); queueSave();
 }));
 Object.values(fields).forEach((field) => {
   field.addEventListener('focus', () => { field.dataset.historySaved = 'false'; });
-  field.addEventListener('blur', () => { field.dataset.historySaved = 'false'; });
+  field.addEventListener('blur', () => { field.dataset.historySaved = 'false'; if (field === fields.notes) { field.dataset.voiceMeasurement = 'false'; dictationStartNotes = null; } });
 });
 drawButton.addEventListener('click', () => {
   state.drawMode = !state.drawMode; state.drawing = null; render(); updateControls();
@@ -209,21 +221,30 @@ tabs.forEach((tab) => tab.addEventListener('click', () => {
   });
   if (tab.id === 'measure-tab') requestAnimationFrame(resizeCanvas);
 }));
+function useKeyboardDictation() {
+  dictationStartNotes = fields.notes.value;
+  fields.notes.dataset.voiceMeasurement = 'true';
+  fields.notes.focus();
+  fields.notes.setSelectionRange(fields.notes.value.length, fields.notes.value.length);
+  voiceStatus.textContent = '請按鍵盤麥克風，念「536 加 30 減 15」。';
+}
+function applyVoiceText(text) {
+  const line = selected(); if (!line) return;
+  const measurement = parseSpokenMeasurement(text); remember();
+  if (measurement) {
+    Object.assign(line, measurement); updatePanel(); render(); queueSave(); voiceStatus.textContent = `已填入照片尺寸：${formatReport(line)}`; return;
+  }
+  line.notes = [line.notes, text].filter(Boolean).join('\n'); updatePanel(); queueSave(); voiceStatus.textContent = `已加入備註：${text}`;
+}
 voiceButton.addEventListener('click', () => {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!selected()) { voiceStatus.textContent = '請先選取照片上的尺寸線。'; return; }
-  const isAppleTouch = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (!Recognition || isAppleTouch) {
-    fields.notes.focus();
-    fields.notes.setSelectionRange(fields.notes.value.length, fields.notes.value.length);
-    voiceStatus.textContent = '請按手機鍵盤上的麥克風開始說話。';
-    return;
-  }
+  if (!Recognition) { useKeyboardDictation(); return; }
   const recognition = new Recognition(); recognition.lang = 'zh-TW'; recognition.interimResults = false; recognition.maxAlternatives = 1;
   voiceStatus.textContent = '正在聆聽…';
-  recognition.onresult = (event) => { const text = event.results[0][0].transcript; const line = selected(); remember(); line.notes = [line.notes, text].filter(Boolean).join('\n'); updatePanel(); queueSave(); voiceStatus.textContent = `已加入備註：${text}`; };
-  recognition.onerror = () => { fields.notes.focus(); voiceStatus.textContent = '請改按手機鍵盤上的麥克風說話。'; };
-  try { recognition.start(); } catch { fields.notes.focus(); voiceStatus.textContent = '請改按手機鍵盤上的麥克風說話。'; }
+  recognition.onresult = (event) => applyVoiceText(event.results[0][0].transcript);
+  recognition.onerror = useKeyboardDictation;
+  try { recognition.start(); } catch { useKeyboardDictation(); }
 });
 exportButton.addEventListener('click', () => {
   if (!state.photoDataUrl) return;

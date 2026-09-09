@@ -19,8 +19,8 @@ export function createAnnotationSnapshot(state) {
   return {
     id: CURRENT_DRAFT,
     version: 2,
-    lines: state.lines.map(({ id, number, type, a, b, cSteel, thickness, sealant, notes }) => ({
-      id, number, type, a: { ...a }, b: { ...b }, cSteel, thickness, sealant, notes,
+    lines: state.lines.map(({ id, number, type, a, b, cSteel, measurementExpression, thickness, sealant, notes }) => ({
+      id, number, type, a: { ...a }, b: { ...b }, cSteel, measurementExpression, thickness, sealant, notes,
     })),
     selectedId: state.selectedId,
     updatedAt: new Date().toISOString(),
@@ -34,6 +34,7 @@ export function normalizeDraft(draft) {
       ...line,
       number: Number.isInteger(line.number) && line.number > 0 ? line.number : index + 1,
       type: line.type === 'l' ? 'l' : 'straight',
+      measurementExpression: typeof line.measurementExpression === 'string' ? line.measurementExpression : '',
     }))
     : [];
   return {

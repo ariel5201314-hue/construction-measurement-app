@@ -1,9 +1,9 @@
-export function calculateReport({ cSteel, thickness, sealant }) {
+export function calculateReport({ cSteel, thickness, sealant, measurementExpression }) {
   if ([cSteel, thickness, sealant].some((value) => value === '' || value === null || value === undefined)) return null;
   const values = [cSteel, thickness, sealant].map(Number);
   if (values.some((value) => !Number.isFinite(value))) return null;
   const [c, t, s] = values;
-  return { result: c + t - s, expression: `${c} + ${t} - ${s}` };
+  return { result: c + t - s, expression: `${measurementExpression || c} + ${t} - ${s}` };
 }
 
 export function formatReport(values) {
@@ -19,13 +19,16 @@ export function parseSpokenMeasurement(text) {
     .replace(/[－−–—]/g, '-')
     .replace(/毫米|公釐|mm/gi, '')
     .replace(/[，,。；;：:\s]/g, '');
-  const parts = normalized.match(/^([^+-]+)(?:\+([^+-]+)-([^+-]+))?$/);
-  if (!parts) return null;
-  const values = parts.slice(1).filter((value) => value !== undefined).map(parseSpokenNumber);
+  if (!/^[^+-]+(?:[+-][^+-]+)*$/.test(normalized)) return null;
+  const parts = normalized.split(/([+-])/);
+  const values = parts.filter((_, index) => index % 2 === 0).map(parseSpokenNumber);
   if (values.some((value) => !Number.isFinite(value))) return null;
-  return values.length === 1
-    ? { cSteel: values[0] }
-    : { cSteel: values[0], thickness: values[1], sealant: values[2] };
+  const result = parts.filter((_, index) => index % 2 === 1)
+    .reduce((total, operator, index) => operator === '+' ? total + values[index + 1] : total - values[index + 1], values[0]);
+  if (!Number.isFinite(result) || result < 0) return null;
+  if (values.length === 1) return { cSteel: result };
+  const measurementExpression = parts.map((part, index) => index % 2 ? ` ${part} ` : values[index / 2]).join('');
+  return { cSteel: result, measurementExpression };
 }
 
 function parseSpokenNumber(text) {

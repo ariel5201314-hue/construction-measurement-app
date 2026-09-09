@@ -8,11 +8,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="工地丈量" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=8" />
     <title>工地丈量APP</title>
   </head>
   <body>
-    <header><span>工地丈量APP</span><small>照片標註・包板報數・資料只留在此手機</small></header>
+    <header><span>工地丈量APP <b class="app-version" aria-label="目前版本 v8">v8</b></span><small>照片標註・包板報數・資料只留在此手機</small></header>
     <nav class="app-tabs" role="tablist" aria-label="工作畫面">
       <button id="measure-tab" class="tab-button active" type="button" role="tab" aria-label="照片丈量" title="照片丈量" aria-selected="true" aria-controls="measure-view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM6 16l4-4 3 3 2-2 3 3M6 8h3"/></svg></button>
       <button id="section-tab" class="tab-button" type="button" role="tab" aria-label="即時斷面" title="即時斷面" aria-selected="false" aria-controls="section-view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M5 6v12h5V9h4v9h5V6M3 18h18"/></svg></button>
@@ -53,13 +53,13 @@
         <div id="measurement-list" class="measurement-list" aria-label="尺寸清單"></div>
         <p id="selected-line">請先在照片上畫一條尺寸線。</p>
         <div class="fields">
-          <label>C 鋼現場尺寸<input id="c-steel" type="number" inputmode="decimal" min="0" placeholder="536" /><span>mm</span></label>
+          <label>現場尺寸／算式<input id="c-steel" type="text" inputmode="text" autocomplete="off" /><span>mm</span></label>
           <label>板厚<input id="thickness" type="number" inputmode="decimal" min="0" value="30" /><span>mm</span></label>
           <label>矽利康縫<input id="sealant" type="number" inputmode="decimal" min="0" value="15" /><span>mm</span></label>
         </div>
         <div class="formula"><small>報數原式</small><output id="formula">尚未建立尺寸線</output><strong id="result">— mm</strong></div>
         <label class="notes">現場備註<textarea id="notes" rows="2" placeholder="例如：C 鋼到包板面；此處牆柱外凸。"></textarea></label>
-        <small class="dictation-hint">選取線段後，點大麥克風並只念尺寸，例如「536」。</small>
+        <small class="dictation-hint">選取線段後，點大麥克風並念實際尺寸；可直接念加減算式。</small>
       </section>
       </div>
 
@@ -71,6 +71,6 @@
         <p class="muted">此版本為尺寸對照示意。照片辨識自動起草斷面前，仍須由現場人員確認。</p>
       </section>
     </main>
-    <script type="module" src="app.js?v=7"></script>
+    <script type="module" src="app.js?v=8"></script>
   </body>
 </html>

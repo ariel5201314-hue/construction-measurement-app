@@ -1,8 +1,8 @@
-import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js?v=8';
-import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js?v=8';
+import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js?v=9';
+import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js?v=9';
 
 const defaults = { cSteel: '', measurementExpression: '', thickness: 30, sealant: 15, notes: '' };
-const state = { photoDataUrl: '', lines: [], selectedId: null, drawing: null, drawMode: false };
+const state = { photoDataUrl: '', lines: [], selectedId: null, drawing: null, chainPoint: null, drawMode: false };
 const history = [];
 const photoInputs = [...document.querySelectorAll('#camera-input, #gallery-input')];
 const stage = document.querySelector('#photo-stage');
@@ -29,6 +29,7 @@ let renderFrame;
 let dictationStartNotes = null;
 
 function selected() { return state.lines.find((line) => line.id === state.selectedId); }
+function lineTypeText(line) { return line.type === 'chain' ? '轉角線' : line.type === 'l' ? 'L 型線' : '直線'; }
 function measurementText(line) {
   const measured = line.cSteel === '' ? null : Number(line.cSteel);
   if (!Number.isFinite(measured)) return null;
@@ -48,12 +49,12 @@ function updateControls() {
   const hasPhoto = Boolean(state.photoDataUrl);
   drawButton.disabled = !hasPhoto;
   lDrawButton.disabled = !hasPhoto;
-  for (const [button, mode, label] of [[drawButton, 'straight', '直線'], [lDrawButton, 'l', 'L 型線']]) {
+  for (const [button, mode, label] of [[drawButton, 'straight', '直線'], [lDrawButton, 'chain', '連續轉角線']]) {
     const active = state.drawMode === mode;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
-    button.setAttribute('aria-label', active ? `取消畫${label}` : `畫${label}`);
-    button.title = active ? `取消畫${label}` : `畫${label}`;
+    button.setAttribute('aria-label', active ? `結束${label}` : `畫${label}`);
+    button.title = active ? `結束${label}` : `畫${label}`;
   }
   undoButton.disabled = history.length === 0;
   deleteButton.disabled = !selected();
@@ -61,8 +62,12 @@ function updateControls() {
   canvas.classList.toggle('drawing-mode', state.drawMode);
   drawHint.textContent = !hasPhoto
     ? '請先拍照或選取照片。'
-    : state.drawMode
-      ? `${state.drawMode === 'l' ? 'L 型線' : '直線'}模式：在照片上按住拖曳；再點橘色圖示可取消。`
+    : state.drawMode === 'chain'
+      ? state.chainPoint
+        ? '轉角模式：繼續點第 2、3、4…點，每次建立一段；再按橘色圖示結束。'
+        : '轉角模式：點第 1 點開始；之後可連續點選，再按橘色圖示結束。'
+      : state.drawMode
+        ? '直線模式：在照片上按住拖曳；再點橘色圖示可取消。'
       : '點畫線圖示後再拖曳；直接點既有線可選取修改。';
 }
 function showPhoto(source) {
@@ -123,10 +128,15 @@ function drawLine(line, active, targetContext = context, width = canvas.clientWi
   const labelY = Math.min(Math.max(y - 15, 4), height - 26);
   targetContext.fillStyle = '#102f3bdd'; targetContext.fillRect(labelX, labelY, textWidth + 12, 22); targetContext.fillStyle = '#fff'; targetContext.fillText(label, labelX + 6, labelY + 16);
 }
+function drawChainAnchor(pointValue) {
+  context.beginPath(); context.arc(pointValue.x * canvas.clientWidth, pointValue.y * canvas.clientHeight, 7, 0, Math.PI * 2);
+  context.fillStyle = '#ffe36e'; context.fill(); context.strokeStyle = '#102f3b'; context.lineWidth = 2; context.stroke();
+}
 function render() {
   context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   state.lines.forEach((line) => drawLine(line, line.id === state.selectedId));
   if (state.drawing) drawLine({ ...defaults, number: state.lines.length + 1, type: state.drawMode, a: state.drawing.a, b: state.drawing.b }, true);
+  if (state.drawMode === 'chain' && state.chainPoint) drawChainAnchor(state.chainPoint);
 }
 function scheduleRender() {
   if (renderFrame) return;
@@ -138,7 +148,7 @@ function updatePanel() {
   measurementList.replaceChildren(...state.lines.map((item, index) => {
     const row = document.createElement('button'); row.type = 'button'; row.className = `measurement-row${item.id === state.selectedId ? ' active' : ''}`;
     const number = item.number ?? index + 1; const measured = measurementText(item); const value = measured ? `${measured} mm` : '未輸入尺寸';
-    row.innerHTML = `<span class="measurement-number">${number}</span><span>${item.type === 'l' ? 'L 型線' : '直線'}</span><span class="measurement-value">${value}</span>`;
+    row.innerHTML = `<span class="measurement-number">${number}</span><span>${lineTypeText(item)}</span><span class="measurement-value">${value}</span>`;
     row.addEventListener('click', () => { state.selectedId = item.id; updatePanel(); render(); });
     return row;
   }));
@@ -146,7 +156,7 @@ function updatePanel() {
     field.disabled = disabled;
     field.value = key === 'cSteel' && line?.measurementExpression ? line.measurementExpression : line?.[key] ?? defaults[key];
   });
-  selectedLine.textContent = line ? `正在編輯 ${line.number ?? state.lines.indexOf(line) + 1} 號${line.type === 'l' ? ' L 型線' : '直線'}` : '請按畫線圖示，或點選照片／清單中的既有線。';
+  selectedLine.textContent = line ? `正在編輯 ${line.number ?? state.lines.indexOf(line) + 1} 號${lineTypeText(line)}` : '請按畫線圖示，或點選照片／清單中的既有線。';
   const calculation = line && calculateReport(line);
   formula.textContent = line ? formatReport(line) : '尚未建立尺寸線';
   result.textContent = calculation ? `${calculation.result} mm` : '— mm';
@@ -156,11 +166,12 @@ function updatePanel() {
   document.querySelector('#sketch-result').textContent = calculation ? `${calculation.result} mm` : '—';
   updateControls();
 }
-function addLine(a, b) {
+function addLine(a, b, keepMode = false) {
   remember();
   const id = crypto.randomUUID();
   const number = Math.max(0, ...state.lines.map((line, index) => line.number ?? index + 1)) + 1;
-  state.lines.push({ id, number, type: state.drawMode, a, b, ...defaults }); state.selectedId = id; state.drawMode = false;
+  state.lines.push({ id, number, type: state.drawMode, a, b, ...defaults }); state.selectedId = id;
+  if (keepMode) state.chainPoint = b; else { state.drawMode = false; state.chainPoint = null; }
   updatePanel(); render(); queueSave();
 }
 
@@ -174,7 +185,7 @@ function handlePhotoChange(event) {
   const reader = new FileReader();
   reader.onload = () => {
     state.photoDataUrl = String(reader.result);
-    state.lines = []; state.selectedId = null; state.drawing = null; state.drawMode = false; history.length = 0;
+    state.lines = []; state.selectedId = null; state.drawing = null; state.chainPoint = null; state.drawMode = false; history.length = 0;
     input.value = '';
     showPhoto(state.photoDataUrl); updatePanel(); queueSave();
   };
@@ -185,6 +196,9 @@ photoInputs.forEach((input) => input.addEventListener('change', handlePhotoChang
 canvas.addEventListener('pointerdown', (event) => {
   if (stage.classList.contains('empty')) return;
   const p = point(event);
+  if (state.drawMode === 'chain') {
+    event.preventDefault(); canvas.setPointerCapture(event.pointerId); updateControls(); return;
+  }
   if (state.drawMode) {
     event.preventDefault();
     state.drawing = { a: p, b: p }; canvas.setPointerCapture(event.pointerId); updateControls(); return;
@@ -200,6 +214,13 @@ canvas.addEventListener('pointermove', (event) => {
   scheduleRender();
 });
 canvas.addEventListener('pointerup', (event) => {
+  if (state.drawMode === 'chain') {
+    event.preventDefault();
+    const p = point(event);
+    if (!state.chainPoint) { state.chainPoint = p; updateControls(); render(); return; }
+    if (Math.hypot(state.chainPoint.x - p.x, state.chainPoint.y - p.y) > .015) addLine(state.chainPoint, p, true);
+    return;
+  }
   if (!state.drawing) return;
   const { a, b } = state.drawing; state.drawing = null;
   if (Math.hypot(a.x - b.x, a.y - b.y) > .03) addLine(a, b); else render();
@@ -227,12 +248,14 @@ Object.values(fields).forEach((field) => {
   field.addEventListener('focus', () => { field.dataset.historySaved = 'false'; });
   field.addEventListener('blur', () => { field.dataset.historySaved = 'false'; if (field === fields.notes) { field.dataset.voiceMeasurement = 'false'; dictationStartNotes = null; } });
 });
-for (const [button, mode] of [[drawButton, 'straight'], [lDrawButton, 'l']]) button.addEventListener('click', () => {
-  state.drawMode = state.drawMode === mode ? false : mode; state.drawing = null; render(); updateControls();
+for (const [button, mode] of [[drawButton, 'straight'], [lDrawButton, 'chain']]) button.addEventListener('click', () => {
+  state.drawMode = state.drawMode === mode ? false : mode; state.drawing = null; state.chainPoint = null; render(); updateControls();
 });
 undoButton.addEventListener('click', () => {
   const previous = history.pop(); if (!previous) return;
-  state.lines = previous.lines; state.selectedId = previous.selectedId; state.drawing = null; state.drawMode = false;
+  const continuing = state.drawMode === 'chain';
+  state.lines = previous.lines; state.selectedId = previous.selectedId; state.drawing = null;
+  state.drawMode = continuing ? 'chain' : false; state.chainPoint = continuing ? state.lines.at(-1)?.b ?? null : null;
   updatePanel(); render(); queueSave();
 });
 deleteButton.addEventListener('click', () => {
@@ -241,6 +264,7 @@ deleteButton.addEventListener('click', () => {
   const index = state.lines.indexOf(line);
   state.lines = state.lines.filter((item) => item.id !== line.id);
   state.selectedId = state.lines[Math.min(index, state.lines.length - 1)]?.id ?? null;
+  if (state.drawMode === 'chain') state.chainPoint = state.lines.at(-1)?.b ?? null;
   updatePanel(); render(); queueSave();
 });
 tabs.forEach((tab) => tab.addEventListener('click', () => {
@@ -324,7 +348,7 @@ async function restoreOnStart() {
     state.photoDataUrl = draft.photoDataUrl;
     state.lines = draft.lines;
     state.selectedId = draft.selectedId;
-    state.drawing = null; state.drawMode = false; history.length = 0;
+    state.drawing = null; state.chainPoint = null; state.drawMode = false; history.length = 0;
     if (state.photoDataUrl) showPhoto(state.photoDataUrl);
     saveStatus.textContent = '已恢復上次紀錄';
   } catch {

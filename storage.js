@@ -33,7 +33,7 @@ export function normalizeDraft(draft) {
     ? draft.lines.filter((line) => line?.id && validPoint(line.a) && validPoint(line.b)).map((line, index) => ({
       ...line,
       number: Number.isInteger(line.number) && line.number > 0 ? line.number : index + 1,
-      type: line.type === 'l' ? 'l' : 'straight',
+      type: ['l', 'chain'].includes(line.type) ? line.type : 'straight',
       measurementExpression: typeof line.measurementExpression === 'string' ? line.measurementExpression : '',
     }))
     : [];

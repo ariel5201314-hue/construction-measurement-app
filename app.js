@@ -1,5 +1,5 @@
-import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js?v=9';
-import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js?v=9';
+import { calculateReport, formatReport, parseSpokenMeasurement } from './calculator.js?v=10';
+import { createAnnotationSnapshot, createPhotoSnapshot, loadDraft, saveDraft } from './storage.js?v=10';
 
 const defaults = { cSteel: '', measurementExpression: '', thickness: 30, sealant: 15, notes: '' };
 const state = { photoDataUrl: '', lines: [], selectedId: null, drawing: null, chainPoint: null, drawMode: false };
@@ -27,6 +27,7 @@ const tabs = [...document.querySelectorAll('[role="tab"]')];
 let saveTimer;
 let renderFrame;
 let dictationStartNotes = null;
+let activeRecognition = null;
 
 function selected() { return state.lines.find((line) => line.id === state.selectedId); }
 function lineTypeText(line) { return line.type === 'chain' ? '轉角線' : line.type === 'l' ? 'L 型線' : '直線'; }
@@ -64,8 +65,8 @@ function updateControls() {
     ? '請先拍照或選取照片。'
     : state.drawMode === 'chain'
       ? state.chainPoint
-        ? '轉角模式：繼續點第 2、3、4…點，每次建立一段；再按橘色圖示結束。'
-        : '轉角模式：點第 1 點開始；之後可連續點選，再按橘色圖示結束。'
+        ? '轉折模式：接著按住拉下一段，放開後可繼續多折；再按橘色圖示結束。'
+        : '轉折模式：按住拉第一段，放開後接著拉下一段；也可連續點選轉折點。'
       : state.drawMode
         ? '直線模式：在照片上按住拖曳；再點橘色圖示可取消。'
       : '點畫線圖示後再拖曳；直接點既有線可選取修改。';
@@ -197,7 +198,9 @@ canvas.addEventListener('pointerdown', (event) => {
   if (stage.classList.contains('empty')) return;
   const p = point(event);
   if (state.drawMode === 'chain') {
-    event.preventDefault(); canvas.setPointerCapture(event.pointerId); updateControls(); return;
+    event.preventDefault();
+    state.drawing = { a: state.chainPoint ?? p, b: p };
+    canvas.setPointerCapture(event.pointerId); updateControls(); render(); return;
   }
   if (state.drawMode) {
     event.preventDefault();
@@ -215,10 +218,12 @@ canvas.addEventListener('pointermove', (event) => {
 });
 canvas.addEventListener('pointerup', (event) => {
   if (state.drawMode === 'chain') {
+    if (!state.drawing) return;
     event.preventDefault();
     const p = point(event);
-    if (!state.chainPoint) { state.chainPoint = p; updateControls(); render(); return; }
-    if (Math.hypot(state.chainPoint.x - p.x, state.chainPoint.y - p.y) > .015) addLine(state.chainPoint, p, true);
+    const { a } = state.drawing; state.drawing = null;
+    if (Math.hypot(a.x - p.x, a.y - p.y) > .015) addLine(a, p, true);
+    else { state.chainPoint ??= p; updateControls(); render(); }
     return;
   }
   if (!state.drawing) return;
@@ -292,7 +297,7 @@ function applyVoiceText(text) {
   const line = selected(); if (!line) return;
   const spoken = String(text ?? '').trim();
   const measurement = parseSpokenMeasurement(spoken);
-  setVoiceListening(false, `已聽到「${spoken}」。`);
+  setVoiceListening(Boolean(activeRecognition), `已聽到「${spoken}」。`);
   if (!spoken) { useKeyboardDictation(); return; }
   remember();
   if (measurement) {
@@ -302,23 +307,36 @@ function applyVoiceText(text) {
   line.notes = [line.notes, spoken].filter(Boolean).join('\n'); updatePanel(); queueSave(); voiceStatus.textContent = `已聽到「${spoken}」，但不是有效尺寸算式；已保留為備註。`;
 }
 voiceButton.addEventListener('click', () => {
+  if (activeRecognition) { activeRecognition.stop(); setVoiceListening(false, '已停止收音。'); return; }
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!selected()) { voiceStatus.textContent = '請先選取照片上的尺寸線。'; return; }
   if (!Recognition) { useKeyboardDictation(); return; }
-  const recognition = new Recognition(); recognition.lang = 'zh-TW'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+  const recognition = new Recognition(); recognition.lang = 'zh-TW'; recognition.continuous = true; recognition.interimResults = true; recognition.maxAlternatives = 1;
+  activeRecognition = recognition;
   let finished = false;
+  let failed = false;
   setVoiceListening(true, '麥克風啟動中…');
   recognition.onstart = () => setVoiceListening(true, '麥克風已開啟，請念這條線的實際尺寸或加減算式。');
   recognition.onaudiostart = () => setVoiceListening(true, '正在收音…');
   recognition.onspeechstart = () => setVoiceListening(true, '已偵測到聲音，正在辨識…');
-  recognition.onresult = (event) => { finished = true; applyVoiceText(event.results[0][0].transcript); };
-  recognition.onnomatch = () => { finished = true; useKeyboardDictation('有收到聲音，但無法辨識尺寸算式；請按鍵盤麥克風再念一次。'); };
+  recognition.onresult = (event) => {
+    for (let index = event.resultIndex; index < event.results.length; index++) {
+      const item = event.results[index];
+      if (item.isFinal) { finished = true; applyVoiceText(item[0].transcript); }
+      else setVoiceListening(true, `正在辨識「${item[0].transcript}」…`);
+    }
+  };
+  recognition.onnomatch = () => setVoiceListening(true, '有收到聲音，請再念一次實際尺寸或加減式。');
   recognition.onerror = (event) => {
-    finished = true;
+    failed = true; activeRecognition = null;
     useKeyboardDictation(event.error === 'not-allowed' ? '麥克風權限未開啟，請允許後再試。' : '語音辨識沒有完成，請按鍵盤麥克風再念一次。');
   };
-  recognition.onend = () => { if (!finished) useKeyboardDictation(); };
-  try { recognition.start(); } catch { useKeyboardDictation(); }
+  recognition.onend = () => {
+    activeRecognition = null;
+    if (failed) return;
+    setVoiceListening(false, finished ? '收音已結束，尺寸已保留；按麥克風可繼續。' : '收音已結束；按麥克風可重新開始。');
+  };
+  try { recognition.start(); } catch { activeRecognition = null; useKeyboardDictation(); }
 });
 exportButton.addEventListener('click', () => {
   if (!state.photoDataUrl) return;

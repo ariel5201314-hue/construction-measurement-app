@@ -1,5 +1,5 @@
-const CACHE_NAME = 'construction-measurement-v9';
-const APP_SHELL = ['./', './index.html', './styles.css?v=9', './app.js?v=9', './calculator.js?v=9', './storage.js?v=9', './manifest.webmanifest'];
+const CACHE_NAME = 'construction-measurement-v10';
+const APP_SHELL = ['./', './index.html', './styles.css?v=10', './app.js?v=10', './calculator.js?v=10', './storage.js?v=10', './manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
